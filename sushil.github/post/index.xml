@@ -1,0 +1,1349 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Posts | Machines Learn</title>
+    <link>https://asrst.github.io/post/</link>
+      <atom:link href="https://asrst.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    <description>Posts</description>
+    <generator>Source Themes Academic (https://sourcethemes.com/academic/)</generator><language>en-us</language>
+    <image>
+      <url>https://asrst.github.io/img/icon-192.png</url>
+      <title>Posts</title>
+      <link>https://asrst.github.io/post/</link>
+    </image>
+    
+    <item>
+      <title>Machine Learning to Identify Toxic Comments - EDA &amp; Baselines</title>
+      <link>https://asrst.github.io/post/toxic-comments-eda-baselines/</link>
+      <pubDate>Sat, 07 Sep 2019 00:00:00 +0000</pubDate>
+      <guid>https://asrst.github.io/post/toxic-comments-eda-baselines/</guid>
+      <description>&lt;h3 id=&#34;breif-overview-of-problem-statement&#34;&gt;Breif Overview of Problem Statement:&lt;/h3&gt;
+
+&lt;p&gt;With too much freedom in social media, profanity in comments (i.e. comments that are disrespectful, rude or otherwise likely to make someone leave a discussion) can be a serious issue if not addressed. Moreover, with surge in number users accessing social media these days, this task cannot be done manually with help of moderators. So to automate the identification of toxic comments on social media platforms, The Conversation AI team had come up with an interesting kaggle competition to build a roboust machine learning model that can do this task.&lt;/p&gt;
+
+&lt;p&gt;For this competition, we are provided a annotated dataset of comments from Wikipedia’s talk page edits. Using this as training data, we are challenged to build a multi-headed machine learning model that is capable of detecting different types of of toxicity like obscenity, threats, insults, and identity-based hate better than existing machine learning models (yes, conversational AI team already has a model to do this).&lt;/p&gt;
+
+&lt;p&gt;More details of the competition can be found here:&lt;/p&gt;
+
+&lt;blockquote&gt;
+&lt;p&gt;source: &lt;a href=&#34;https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge&#34;&gt;kaggle&lt;/a&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h3 id=&#34;data--evaluation-metrics&#34;&gt;Data &amp;amp; Evaluation metrics:&lt;/h3&gt;
+
+&lt;p&gt;&lt;code&gt;train.csv&lt;/code&gt; contains a large number of Wikipedia comments (around 100K+) which have been labeled by human raters for toxic behavior. The types of toxicity are:&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;toxic
+ severe_toxic
+ obscene
+ threat
+ insult
+ identity_hate&lt;/code&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Apart from the above mentioned classes there will be also completely clean comments.&lt;/li&gt;
+&lt;li&gt;The trained model will be tested on &lt;code&gt;test.csv&lt;/code&gt; data using mean column-wise ROC AUC as evaluation metric.&lt;/li&gt;
+&lt;li&gt;**Mean column-wise ROC AUC = Average of the individual ROC AUC scores of each predicted class. **&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Submission File Format:&lt;/p&gt;
+
+&lt;p&gt;For each id in the test set, you must predict a probability for each of the six possible types of comment toxicity (toxic, severetoxic, obscene, threat, insult, identityhate). The columns must be in the same order as shown below. The file should contain a header and have the following format:&lt;/p&gt;
+
+&lt;p&gt;&lt;code&gt;id,toxic,severe_toxic,obscene,threat,insult,identity_hate
+ 00001cee341fdb12,0.5,0.5,0.5,0.5,0.5,0.5
+ 0000247867823ef7,0.5,0.5,0.5,0.5,0.5,0.5
+ etc.&lt;/code&gt;&lt;/p&gt;
+
+&lt;h4 id=&#34;objective-of-this-notebook&#34;&gt;Objective of this Notebook:&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Explore the data, perform analysis &amp;amp; build baselines.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&#34;reading-the-data&#34;&gt;Reading the Data&lt;/h3&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;import warnings
+warnings.filterwarnings(&#39;ignore&#39;)
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+import os
+data_paths = {}
+for dirname, _, filenames in os.walk(&#39;/kaggle/input&#39;):
+    for filename in filenames:
+        data_paths[filename] = os.path.join(dirname, filename)
+        # print(os.path.join(dirname, filename))
+        
+train_df = pd.read_csv(data_paths[&#39;train.csv&#39;])
+test_df = pd.read_csv(data_paths[&#39;test.csv&#39;])
+sub_df = pd.read_csv(data_paths[&#39;sample_submission.csv&#39;])
+print(&#39;Train data shape:&#39;, train_df.shape)
+print(&#39;Columns in Train:&#39;, train_df.columns)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Train data shape: (159571, 8)
+Columns in Train: Index([&#39;id&#39;, &#39;comment_text&#39;, &#39;toxic&#39;, &#39;severe_toxic&#39;, &#39;obscene&#39;, &#39;threat&#39;,
+       &#39;insult&#39;, &#39;identity_hate&#39;],
+      dtype=&#39;object&#39;)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The provided &lt;code&gt;train.csv&lt;/code&gt; is having 159571 rows and 8 columns. Let us now sample to take 5 rows from the data to get visual understanding of what is present.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;train_df.sample(5, random_state = 1)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;div&gt;
+&lt;style scoped&gt;
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+&lt;/style&gt;
+&lt;table border=&#34;1&#34; class=&#34;dataframe&#34;&gt;
+  &lt;thead&gt;
+    &lt;tr style=&#34;text-align: right;&#34;&gt;
+      &lt;th&gt;&lt;/th&gt;
+      &lt;th&gt;id&lt;/th&gt;
+      &lt;th&gt;comment_text&lt;/th&gt;
+      &lt;th&gt;toxic&lt;/th&gt;
+      &lt;th&gt;severe_toxic&lt;/th&gt;
+      &lt;th&gt;obscene&lt;/th&gt;
+      &lt;th&gt;threat&lt;/th&gt;
+      &lt;th&gt;insult&lt;/th&gt;
+      &lt;th&gt;identity_hate&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;th&gt;24915&lt;/th&gt;
+      &lt;td&gt;41e65f43c180838e&lt;/td&gt;
+      &lt;td&gt;YOU ARE A FAT, GEEKY PRICK WHO HAS NOTHING TO ...&lt;/td&gt;
+      &lt;td&gt;1&lt;/td&gt;
+      &lt;td&gt;1&lt;/td&gt;
+      &lt;td&gt;1&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;1&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;75819&lt;/th&gt;
+      &lt;td&gt;cade9e425d75948e&lt;/td&gt;
+      &lt;td&gt;Agent X2: Basically thanks - with a &#39;little&#39; m...&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;53891&lt;/th&gt;
+      &lt;td&gt;8ff87747403ed2e6&lt;/td&gt;
+      &lt;td&gt;Why are my posts being deleted? \n\nI have tri...&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;154159&lt;/th&gt;
+      &lt;td&gt;a95604c7a938abb3&lt;/td&gt;
+      &lt;td&gt;&#34;\n\n Controlled Demolitions and Common Sense ...&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;th&gt;13040&lt;/th&gt;
+      &lt;td&gt;2288910537399728&lt;/td&gt;
+      &lt;td&gt;I do not understand your reply.  //Blaxthos ( ...&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+      &lt;td&gt;0&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;/div&gt;
+
+&lt;ul&gt;
+&lt;li&gt;This is going to be text classification problem...we are given a comment and we need to classify whether it is toxic.&lt;/li&gt;
+&lt;li&gt;The column &lt;code&gt;comment_text&lt;/code&gt; contains the comments text and it will be our main feature.&lt;/li&gt;
+&lt;li&gt;All the remaining columns except &lt;code&gt;id&lt;/code&gt; will be our target variable to predict.&lt;/li&gt;
+&lt;li&gt;Target varaibles are binary encoded (one hot encoded) &amp;amp; all zeros represents a clean comment.&lt;/li&gt;
+&lt;li&gt;A single comments can belong to multiple toxicity classes&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Now lets look into few complete random comments from the data&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;for i in [34, 55345, 124786]:
+    display(train_df.loc[i, &#39;comment_text&#39;])
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;&#39;&amp;quot;\nWell, not &amp;quot;&amp;quot;before the process&amp;quot;&amp;quot; but &amp;quot;&amp;quot;before how we do things with subpages&amp;quot;&amp;quot; His RfA is listed on NoSeptember\&#39;s page and you can find it if you look. September 2004 I think. I have my differences with El_C to be sure, but was surprised to see a block, so I left a note. ++: t/c &amp;quot;&#39;
+
+
+
+&#39;They are deletionists.&#39;
+
+
+
+&amp;quot;Hello \n\nHello, I&#39;m Irene.\n\nI created See Me novel from Nicholas Sparks. I created it because I saw Nicholas Spark&#39;s official website about a new novel released coming soon. I ask you, is this page wrong or anything?\n\nThanks.&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Clearly, comments are largely varying in lengths. Let us see how their distrubution looks like&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;comment_lens = train_df[&#39;comment_text&#39;].str.len()
+print(&#39;Central Tendencies on lengths of comment_text\n&#39;, comment_lens.describe())
+ax = comment_lens.hist()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Central Tendencies on lengths of comment_text
+ count    159571.000000
+mean        394.073221
+std         590.720282
+min           6.000000
+25%          96.000000
+50%         205.000000
+75%         435.000000
+max        5000.000000
+Name: comment_text, dtype: float64
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_8_1.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;p&gt;From the above outputs we can say these points:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Comments have no null values.&lt;/li&gt;
+&lt;li&gt;Mininum length of a comment is only 6 chars while maximum length can be 5000 characters.&lt;/li&gt;
+&lt;li&gt;Mean (394 chars) and median (205 chars) are not close indicating the skewness - as a result histogram is left sided&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Now we will look how many of given comments are clean &amp;amp; how many are toxic (in other words, distrubution of classes to be predicted)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;import matplotlib.pyplot as plt
+import seaborn as sns
+
+drop_col = [&#39;id&#39;, &#39;is_clean&#39;]  # columns not neccessary - can be dropped
+text_col = [&#39;comment_text&#39;]  # text feature
+label_col = [col for col in train_df.columns if col not in text_col + drop_col] # target variables
+
+labels_per_comment = train_df[label_col].sum(axis = 1) # clac no.of labels for each comment
+
+# add a new column to indicate if a comment is toxic (bad) or not (clean).
+train_df[&#39;is_clean&#39;] = 0
+train_df.loc[labels_per_comment == 0, &#39;is_clean&#39;] = 1
+# train_df[&#39;is_clean&#39;].value_counts()
+
+print(&amp;quot;Total Clean comments (All 0&#39;s in a target row) in train:&amp;quot;,len(train_df[train_df[&#39;is_clean&#39;] == 1]))
+print(&amp;quot;Total unclean/bad comments (atleast one 1 in a target row)in train:&amp;quot;,len(train_df[train_df[&#39;is_clean&#39;] != 1]))
+print(&amp;quot;Total label tags (total counts of 1&#39;s in target columns):&amp;quot;,train_df[label_col].sum().sum())
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Total Clean comments (All 0&#39;s in a target row) in train: 143346
+Total unclean/bad comments (atleast one 1 in a target row)in train: 16225
+Total label tags (total counts of 1&#39;s in target columns): 35098
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Importantly we need to notice that total bad comments &amp;amp; total label tags are not equal, so said intially there are multiple labels for many comments. On Average, there are 2 labels for each comment - but let us see - Now let us see how multiple labels are divided:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;tags_count = labels_per_comment.value_counts()
+
+# plotting the label counts
+plt.figure(figsize=(8,4))
+ax = sns.barplot(tags_count.index, tags_count.values, alpha=0.7)
+plt.title(&amp;quot;Tags Counts v/s Occurences in Train Data&amp;quot;)
+plt.ylabel(&#39;# of Occurrences&#39;, fontsize=12)
+plt.xlabel(&#39;# Tag Count&#39;, fontsize=12)
+
+#adding the text labels
+rects = ax.patches
+labels = tags_count.values
+for rect, label in zip(rects, labels):
+    height = rect.get_height()
+    ax.text(rect.get_x() + rect.get_width()/2, height + 10, 
+            label, ha=&#39;center&#39;, va=&#39;bottom&#39;)
+
+plt.show()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_12_0.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;maximum no.of tags for a bad comment is 6 (i.e it will belong to all six classes).&lt;/li&gt;
+&lt;li&gt;This we can be viewed as highericial tagging. (Ex: A comment which is &lt;code&gt;severe_toxic&lt;/code&gt; will be also a &lt;code&gt;toxic&lt;/code&gt;).&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Lets visualize how the main six classes are distributed (counts of classes) among the 35098 occurences&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;label_counts = train_df[label_col].sum()
+
+# plotting the label counts
+plt.figure(figsize=(8,4))
+ax = sns.barplot(label_counts.index, label_counts.values, alpha=0.7)
+plt.title(&amp;quot;Counts Per Class&amp;quot;)
+plt.ylabel(&#39;# of Occurrences&#39;, fontsize=12)
+plt.xlabel(&#39;Label&#39;, fontsize=12)
+
+#adding the text labels
+rects = ax.patches
+labels = label_counts.values
+for rect, label in zip(rects, labels):
+    height = rect.get_height()
+    ax.text(rect.get_x() + rect.get_width()/2, height + 10, 
+            label, ha=&#39;center&#39;, va=&#39;bottom&#39;)
+
+plt.show()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_14_0.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;p&gt;The above figure tells us that Toxicity type is not evenly spreadout - &lt;code&gt;toxic&lt;/code&gt; comments are more common while &lt;code&gt;threat&lt;/code&gt; is least occuring class. This is interesting &amp;amp; a bit scary too. In total, there is a high imbalance b/w the clean &amp;amp; unclean comments. Again with in unclean comments, there is imbalance b/w the types of toxicity!&lt;/p&gt;
+
+&lt;p&gt;Till now we only analyzed the target varaibles, now we will look at one comment each from the all 6 types of toxic classes.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;import random
+for label in label_col:
+    label_df = train_df[train_df[label]==1].reset_index(drop = 1)
+    print(&#39;\n&#39; + label + &#39; - comment sample :&#39;)
+    print(label_df.loc[random.randint(0, len(label_df)-1), &#39;comment_text&#39;])
+    print(&#39;\n&#39; + &#39;-&#39;*50)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;toxic - comment sample :
+Rjanag, your foul language showed your true white trash mentality. You being white prove more of your bias and hideous intent. Keep your effort in trying to hide the truth. If you can certainly call up your gang to block people from Wikipedia, it only serves as proof of your fear of the truth.
+
+--------------------------------------------------
+
+severe_toxic - comment sample :
+what i mean to say is that im a big fucknig idiot and i dont know what im talking about
+
+--------------------------------------------------
+
+obscene - comment sample :
+Warning
+Get off your high horse with warnings and referring to your talk page as if it were another user. You&#39;re no admin, but like the other assclowns that have gotten on my case, you seem to think you&#39;ve got cred by throwing warnings at me. No one is gonna check the talk page of a low importance-rated article and you know it, you dumbfuck.
+
+--------------------------------------------------
+
+threat - comment sample :
+I&#39;ll kick the shit out of you ya cunt
+
+--------------------------------------------------
+
+insult - comment sample :
+Speculate? A retarded 10 year old child can see what is happening. 122.60.93.162
+
+--------------------------------------------------
+
+identity_hate - comment sample :
+Hi, you poor twerps. My money does far more good than your pathetic rule enforcing. Have fun with your fat wives and gay hookers.
+
+--------------------------------------------------
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Aah...that&#39;s a lot of profanity...!&lt;/li&gt;
+&lt;li&gt;Comments are having puntuctions &amp;amp; things user want to highlight in captials (or) quotes.&lt;/li&gt;
+&lt;li&gt;As usually, Contractions are always there. In some cases (very less), there is also text from other languages in b/w english.&lt;/li&gt;
+&lt;li&gt;comments include lots of chatting/social shortcuts which we generally use on social media.&lt;/li&gt;
+&lt;li&gt;few comments seems to contain numbers, time and also IP address (might be of user&#39;s).&lt;/li&gt;
+&lt;li&gt;In few cases there are also Device Id&#39;s and Urls posted by users.&lt;/li&gt;
+&lt;li&gt;Some comments are spam - repeating same things 10&#39;s of times.&lt;/li&gt;
+&lt;li&gt;In few rare cases, I found the word &lt;code&gt;unblock&lt;/code&gt; before the comment - this might indicate that comment is blocked as it is toxic.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Now, let us start exploring into comment texts with some questions which relates to our objective. Our objective here is to classify the bad comments into different to toxicity types.&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Are Longer comments more toxic ?&lt;/li&gt;
+&lt;li&gt;did Presence of special characters vary with Toxicity ?&lt;/li&gt;
+&lt;li&gt;Are spammer more toxic ?&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;These questions will answer how Toxicity of comments vary with different features of comment_text like length, presence of punctuations, capital letters, words, or sentences.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;import re
+
+#Total chars:
+train_df[&#39;total_len&#39;] = train_df[&#39;comment_text&#39;].apply(len)
+test_df[&#39;total_len&#39;] = test_df[&#39;comment_text&#39;].apply(len)
+
+#Sentence count in comment: &#39;\n&#39; is split &amp;amp; count number of sentences in each comment
+train_df[&#39;sent_count&#39;] = train_df[&amp;quot;comment_text&amp;quot;].apply(lambda x: len(re.findall(&amp;quot;\n&amp;quot;,str(x)))+1)
+test_df[&#39;sent_count&#39;] = test_df[&amp;quot;comment_text&amp;quot;].apply(lambda x: len(re.findall(&amp;quot;\n&amp;quot;,str(x)))+1)
+
+#Word count in each comment:
+train_df[&#39;word_count&#39;] = train_df[&amp;quot;comment_text&amp;quot;].apply(lambda x: len(str(x).split()))
+test_df[&#39;word_count&#39;] = test_df[&amp;quot;comment_text&amp;quot;].apply(lambda x: len(str(x).split()))
+
+
+plt.figure(figsize=(18,6))
+plt.suptitle(&amp;quot;Are longer comments more toxic?&amp;quot;,fontsize=18)
+plt.tight_layout()
+
+# total lengths (characters)
+plt.subplot(131)
+ax=sns.kdeplot(train_df[train_df.is_clean == 0].total_len, label=&amp;quot;UnClean&amp;quot;,shade=True,color=&#39;r&#39;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 1].total_len, label=&amp;quot;Clean&amp;quot;)
+plt.legend()
+plt.ylabel(&#39;Number of occurances&#39;, fontsize=12)
+plt.xlabel(&#39;# of Chars&#39;, fontsize=12)
+# plt.title(&amp;quot;# Chars v/s Toxicity&amp;quot;, fontsize=12)
+
+# words
+plt.subplot(132)
+ax=sns.kdeplot(train_df[train_df.is_clean == 0].word_count, label=&amp;quot;UnClean&amp;quot;,shade=True,color=&#39;r&#39;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 1].word_count, label=&amp;quot;Clean&amp;quot;)
+plt.legend()
+plt.xlabel(&#39;# of Words&#39;, fontsize=12)
+# plt.title(&amp;quot;# Words v/s comment Toxicity&amp;quot;, fontsize=12)
+
+## sentences
+plt.subplot(133)
+ax=sns.kdeplot(train_df[train_df.is_clean == 0].sent_count, label=&amp;quot;UnClean&amp;quot;,shade=True,color=&#39;r&#39;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 1].sent_count, label=&amp;quot;Clean&amp;quot;)
+plt.legend()
+plt.xlabel(&#39;# of Sentences&#39;, fontsize=12)
+# plt.title(&amp;quot;# Sentences v/s comment Toxicity&amp;quot;, fontsize=12)
+
+plt.show()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_19_0.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;most comments are having less than 25 sentences &amp;amp; less than 250 words&lt;/li&gt;
+&lt;li&gt;unclean comments are having more no.of words in less no.of sentences.&lt;/li&gt;
+&lt;li&gt;The distrubution plots of clean &amp;amp; unclean of all three plots are very much overlapping with each others, indicating these features are going to be less significant in differentiating them.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;import string
+
+#Captial letters:
+train_df[&#39;capitals&#39;] = train_df[&#39;comment_text&#39;].apply(lambda x: sum(1 for c in x if c.isupper()))
+test_df[&#39;capitals&#39;] = test_df[&#39;comment_text&#39;].apply(lambda x: sum(1 for c in x if c.isupper()))
+
+# #Captials ratio:
+# train_df[&#39;capitals_percent&#39;] = train_df[&#39;capitals&#39;]/train_df[&#39;total_len&#39;] * 100
+# test_df[&#39;capitals_percent&#39;] = test_df[&#39;capitals&#39;]/train_df[&#39;total_len&#39;] * 100
+
+# punct count:
+train_df[&#39;punct_count&#39;] = train_df[&#39;comment_text&#39;].apply(lambda x: sum(1 for c in x if c in string.punctuation))
+test_df[&#39;punct_count&#39;] = test_df[&#39;comment_text&#39;].apply(lambda x: sum(1 for c in x if c in string.punctuation))
+
+# smilies:
+smilies = (&#39;:-)&#39;, &#39;:)&#39;, &#39;;-)&#39;, &#39;;)&#39;)
+train_df[&#39;smilies_count&#39;] = train_df[&#39;comment_text&#39;].apply(lambda comment: sum(comment.count(s) for s in smilies))
+test_df[&#39;smilies_count&#39;] = test_df[&#39;comment_text&#39;].apply(lambda comment: sum(comment.count(s) for s in smilies))
+
+#----------plotting------------
+
+plt.figure(figsize=(18,6))
+plt.suptitle(&amp;quot;did Presence of special characters vary with Toxicity ?\n&amp;quot;,fontsize=18)
+plt.tight_layout()
+
+# words
+plt.subplot(131)
+ax=sns.kdeplot(train_df[train_df.is_clean == 0].capitals, label=&amp;quot;UnClean&amp;quot;,shade=True,color=&#39;r&#39;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 1].capitals, label=&amp;quot;Clean&amp;quot;)
+plt.legend()
+plt.ylabel(&#39;Number of occurances&#39;, fontsize=12)
+plt.xlabel(&#39;# Capital letters&#39;, fontsize=12)
+# plt.title(&amp;quot;# Captials v/s Toxicity&amp;quot;, fontsize=12)
+
+# words
+plt.subplot(132)
+ax=sns.kdeplot(train_df[train_df.is_clean == 0].punct_count, label=&amp;quot;UnClean&amp;quot;,shade=True,color=&#39;r&#39;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 1].punct_count, label=&amp;quot;Clean&amp;quot;)
+plt.legend()
+plt.xlabel(&#39;# of Punctuations&#39;, fontsize=12)
+# plt.title(&amp;quot;#Punctuations v/s comment Toxicity&amp;quot;, fontsize=12)
+
+## sentences
+plt.subplot(133)
+ax=sns.kdeplot(train_df[train_df.is_clean == 0].smilies_count, label=&amp;quot;UnClean&amp;quot;,shade=True,color=&#39;r&#39;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 1].smilies_count, label=&amp;quot;Clean&amp;quot;)
+plt.legend()
+plt.xlabel(&#39;# of Smilies&#39;, fontsize=12)
+# plt.title(&amp;quot;#Smilies v/s comment Toxicity&amp;quot;, fontsize=12)
+
+plt.show()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_21_0.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;presence of captial letters is more in case of unclean comments, but the distrbutions are overlapping making it a difficult feature for models to extract information.&lt;/li&gt;
+&lt;li&gt;most of the clean comments are having punctuations less than 100 while for unclean comments it spread to max of 5000 punctuations.&lt;/li&gt;
+&lt;li&gt;no.of smilies in unclean v/s clean comments is very much similar and unclean comments are having more comments with no.of smilies = 1.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;#Unique word count:
+train_df[&#39;unique_word_count&#39;] = train_df[&amp;quot;comment_text&amp;quot;].apply(lambda x: len(set(str(x).split())))
+test_df[&#39;unique_word_count&#39;] = test_df[&amp;quot;comment_text&amp;quot;].apply(lambda x: len(set(str(x).split())))
+
+#Unique ratio:
+train_df[&#39;unique_word_percent&#39;] = train_df[&#39;unique_word_count&#39;]/train_df[&#39;word_count&#39;] * 100
+test_df[&#39;unique_word_percent&#39;] = test_df[&#39;unique_word_count&#39;]/train_df[&#39;word_count&#39;] * 100
+
+#----------plotting------------
+
+# comments with unique word count percentage &amp;lt; 25%...they can be spam/referal links/marketing links
+
+plt.figure(figsize=(15,5))
+plt.suptitle(&amp;quot;Comments with less-unique-words(spam) are more toxic?&amp;quot;,fontsize = 18)
+
+plt.subplot(121)
+plt.title(&amp;quot;% of unique words in comments&amp;quot;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 0].unique_word_percent, label=&amp;quot;UnClean&amp;quot;,shade=True,color=&#39;r&#39;)
+ax=sns.kdeplot(train_df[train_df.is_clean == 1].unique_word_percent, label=&amp;quot;Clean&amp;quot;)
+plt.legend()
+plt.ylabel(&#39;Number of occurances&#39;, fontsize=12)
+plt.xlabel(&#39;Percent unique words&#39;, fontsize=12)
+
+plt.subplot(122)
+sns.violinplot(y = &#39;unique_word_count&#39;,x=&#39;is_clean&#39;, data = train_df[train_df[&#39;unique_word_percent&#39;] &amp;lt; 25], 
+               split=True,inner=&amp;quot;quart&amp;quot;)
+plt.xlabel(&#39;is_Clean&#39;, fontsize=12)
+plt.ylabel(&#39;# of words&#39;, fontsize=12)
+plt.title(&amp;quot;# unique words v/s Toxicity&amp;quot;)
+plt.show()
+
+# train_df[train_df[&#39;word_unique_percent&#39;] &amp;lt; 25]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_23_0.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;There is a wide spread area for unclean points in the unique word percentage range of 1-10%, Interesting there are clean comments as well with lesser number of unique words.&lt;/li&gt;
+&lt;li&gt;This feature seems carry some significance especially incase of sentences with less unique words.&lt;/li&gt;
+&lt;li&gt;lets once see how text in clean-spam &amp;amp; unclean-spam comments look like&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;## lets have a look how clean &amp;amp; unclean spam comment looks like
+
+print(&amp;quot;Clean Spam example:&amp;quot;)
+print(train_df[train_df[&#39;unique_word_percent&#39;] &amp;lt; 10][train_df[&#39;is_clean&#39;] == 1].comment_text.iloc[3])
+print(&#39;-&#39;*50)
+print(&amp;quot;Toxic Spam example:&amp;quot;)
+print(train_df[train_df[&#39;unique_word_percent&#39;] &amp;lt; 10][train_df[&#39;is_clean&#39;] == 0].comment_text.iloc[25])
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Clean Spam example:
+MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD MUD
+--------------------------------------------------
+Toxic Spam example:
+I OWN THIS PAGE YOU FOOLS!! YOU SHOULD FEAR ME!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEORGE BUSH SHOULD GO TO HELL!!!!!!!!! I AM THE GOD OF CHOCOBOS, I WANT MY CHEESE, GEOR
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;we definitely need to penalize the over repeating words (or) there will be chance for models to learn as words like &#39;George Bush&#39; as indicator as toxicity. so comments with lesser unique words should be preprocessed carefully.&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;Tfidf is well known for this penalizing effect.&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;TF-IDF Vectorizer&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;TF - Term Frequency -- Count of the words(Terms) in the text corpus (same of Count Vect)&lt;/li&gt;
+&lt;li&gt;IDF - Inverse Document Frequency -- Penalizes words that are too frequent. We can think of this as regularization&lt;/li&gt;
+&lt;/ul&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;train_df.to_csv(&#39;train_feateng.csv&#39;, index = None)
+test_df.to_csv(&#39;test_feateng.csv&#39;, index = None)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;def get_topn_tfidf_feat_byClass(X_tfidf, y_train, feature_names, labels, topn):
+    
+    &amp;quot;&amp;quot;&amp;quot;
+    utility function to get top N tfidf features from the tf-idf sparse matrix
+    &amp;quot;&amp;quot;&amp;quot;
+    
+    feat_imp_dfs = {}
+    
+    for label in labels:
+        # get indices of rows where label is true
+        label_ids = y_train.index[y_train[label] == 1]
+        # get subset of rows
+        label_rows = X_tfidf[label_ids].toarray()
+        # calc mean feature importance
+        feat_imp = label_rows.mean(axis = 0)
+        # sort by column dimension and get topn feature indices
+        topn_ids = np.argsort(feat_imp)[::-1][:topn]
+        # combine tfidf value with feature name
+        topn_features = [(feature_names[i], feat_imp[i]) for i in topn_ids]
+        # df
+        topn_df = pd.DataFrame(topn_features, columns = [&#39;word_feature&#39;, &#39;tfidf_value&#39;])
+        # save 
+        feat_imp_dfs[label] = topn_df
+    return feat_imp_dfs
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;transforming-text-data-into-tdidf-vectors--analysing-tfidf-values&#34;&gt;Transforming Text Data into TD-IDF vectors &amp;amp; Analysing TF-IDF values&lt;/h3&gt;
+
+&lt;h4 id=&#34;1-visualising-bigram-features-per-class&#34;&gt;1. Visualising Bigram features per Class&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.feature_extraction.text import TfidfVectorizer
+from nltk.corpus import stopwords
+from nltk import pos_tag
+from nltk.stem.wordnet import WordNetLemmatizer 
+from nltk.tokenize import word_tokenize # Tweet tokenizer does not split at apostophes which is what we want
+from nltk.tokenize import TweetTokenizer
+
+
+tfidf = TfidfVectorizer(ngram_range = (1,1), min_df = 100, 
+                        strip_accents=&#39;unicode&#39;, analyzer=&#39;word&#39;,
+                        use_idf=1,smooth_idf=1,sublinear_tf=1,
+                        stop_words = &#39;english&#39;)
+X_unigrams = tfidf.fit_transform(train_df[&#39;comment_text&#39;])
+X_unigrams.shape, len(tfidf.get_feature_names())
+
+
+feature_names = np.array(tfidf.get_feature_names())
+imp_dfs = get_topn_tfidf_feat_byClass(X_unigrams, train_df, feature_names, label_col, topn = 10)
+
+plt.figure(figsize=(15,10))
+
+for i, label in enumerate(label_col):
+    plt.subplot(3, 2, i + 1)
+    sns.barplot(imp_dfs[label].word_feature[:10], imp_dfs[label].tfidf_value[:10], alpha = 0.8)
+    plt.title(&amp;quot;Important UniGrams for the class:{}&amp;quot;.format(label))
+    plt.tight_layout()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_30_0.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;few words like &lt;code&gt;fuck&lt;/code&gt; seems to be in every class, but again as this is multi-label classification (multiple tags for each comment) there will be that overlapping.&lt;/li&gt;
+&lt;li&gt;especially &lt;code&gt;threat&lt;/code&gt; class is standing apart with words like &lt;code&gt;kill&lt;/code&gt;, &lt;code&gt;die&lt;/code&gt;, &lt;code&gt;death&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Interestingly, due to high tf-idf value, word &lt;code&gt;wikipedia&lt;/code&gt; has stands in top10 features for the &lt;code&gt;toxic&lt;/code&gt; class. which model should not learn.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&#34;2-visualising-bigram-features-per-class&#34;&gt;2. Visualising Bigram features per Class&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.feature_extraction.text import TfidfVectorizer
+tfidf = TfidfVectorizer(ngram_range = (2,2), min_df = 100, 
+                        strip_accents=&#39;unicode&#39;, analyzer=&#39;word&#39;,
+                        use_idf=1,smooth_idf=1,sublinear_tf=1,
+                        stop_words = &#39;english&#39;)
+X_bigrams = tfidf.fit_transform(train_df[&#39;comment_text&#39;])
+X_bigrams.shape, len(tfidf.get_feature_names())
+
+feature_names = np.array(tfidf.get_feature_names())
+imp_dfs = get_topn_tfidf_feat_byClass(X_bigrams, train_df, feature_names, label_col, topn = 10)
+
+plt.figure(figsize=(15,12))
+
+for i, label in enumerate(label_col):
+    plt.subplot(3, 2, i + 1)
+    by_class = sns.barplot(imp_dfs[label].word_feature[:10], imp_dfs[label].tfidf_value[:10], alpha = 0.8)
+    plt.title(&amp;quot;Important BiGrams for the class:{}&amp;quot;.format(label))
+    for item in by_class.get_xticklabels():
+        item.set_rotation(45)
+    plt.tight_layout()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;figure&gt;&lt;img src=&#34;output_33_0.png&#34; alt=&#34;png&#34;&gt;&lt;/figure&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;the top 10 tfidf features in case are not much differentiating, every class are having almost same phrases.&lt;/li&gt;
+&lt;li&gt;remember, the &lt;code&gt;comment_text&lt;/code&gt; is completely unprocessed for now.&lt;/li&gt;
+&lt;li&gt;There is high chance for Names of persons like famous names &lt;code&gt;george bush&lt;/code&gt;, &lt;code&gt;mitt romney&lt;/code&gt; (if mentioned repeatedly in the spam) to appear in the bigram features for any class. To avoid this we can preprocess spam comments (comments with &amp;lt; 25% unique words) differently like removing usernames/person names from the comments using regular expressions or POS tags.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&#34;splitting-the-data-into-training--validation-sets&#34;&gt;Splitting the data into Training &amp;amp; Validation sets:&lt;/h3&gt;
+
+&lt;p&gt;Before testing the model on the actual test data, we neeed to cross-validate internally that model is trained in a right way. Validation set will also help to tune model properly. I am using sklearn&#39;s &lt;code&gt;train_test_split&lt;/code&gt; utility function to do this random splitting. I am using &lt;code&gt;random_state = 2019&lt;/code&gt;as seed for purpose of reproducability &amp;amp; &lt;code&gt;test_size&lt;/code&gt; = 0.2 meaning 20% of data points in the train set will be used as validation data and remaining 80% of data will be used to train the model.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.model_selection import train_test_split
+X_train, X_val, y_train, y_val = train_test_split(train_df[&#39;comment_text&#39;], 
+                                                  train_df[label_col], test_size=0.2, random_state=2019)
+X_test = test_df[&#39;comment_text&#39;]
+print(&#39;Data points in train data after splitting:&#39;, len(X_train))
+print(&#39;Data points in valiadtion data:&#39;, len(X_val))
+print(&#39;Data points in test data:&#39;, len(X_test))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Data points in train data after splitting: 127656
+Data points in valiadtion data: 31915
+Data points in test data: 153164
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;naive-baselines&#34;&gt;Naive Baselines:&lt;/h3&gt;
+
+&lt;p&gt;Before getting to actual modelling &amp;amp; algorithms. let me build some naive baseline on validation set to get minimal optimal score. These scores will be useful for analysing &amp;amp; selection of the models we will be building.&lt;/p&gt;
+
+&lt;h4 id=&#34;naive-baseline-1-random-guessing-probabilities-bw-0--1&#34;&gt;naive baseline 1: Random guessing probabilities b/w 0 &amp;amp; 1.&lt;/h4&gt;
+
+&lt;p&gt;This time instead having common probility...we take random value for probability for every column in row. What good is a machine learing if its results are not even better than a random prediction ?&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.metrics import log_loss, roc_auc_score
+y_val_naive1 = np.random.rand(y_val.shape[0], y_val.shape[1])
+print(&#39;Naive Baseline:&#39;, &#39;Random Guessing&#39;)
+print(&#39;ROC-AUC score :&#39;, roc_auc_score(y_val, y_val_naive1))
+print(&#39;Log Loss:&#39;, log_loss(y_val, y_val_naive1))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Naive Baseline: Random Guessing
+ROC-AUC score : 0.5075030929045684
+Log Loss: 0.4697888746965487
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;naive-baseline-2-predicting-all-probabilities-as-05&#34;&gt;Naive baseline 2: Predicting all probabilities as 0.5&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Here we are guessing more intelligently...as every comments in validation set as clean. From data analysi we found that train data is highly imbalanced there is high chance that validation set will be also have same distrbutions and predicting every comment as clean will actually give us 90% accuracy...this is also reason why accuracy is not an evalution metric for this problem.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;y_val_naive2 = np.zeros(y_val.shape)
+y_val_naive2[:] = 0.5
+print(&#39;Naive Baseline:&#39;, &#39;Random Guessing&#39;)
+print(&#39;ROC-AUC score :&#39;, roc_auc_score(y_val, y_val_naive2))
+print(&#39;Log Loss:&#39;, log_loss(y_val, y_val_naive2))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Naive Baseline: Random Guessing
+ROC-AUC score : 0.5
+Log Loss: 0.40652139485133465
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;So the machine model we are going to build should atleast have validation log loss &amp;lt; 0.40 &amp;amp; roc-auc &amp;gt; 0.5. which seems not that tough to achieve.&lt;/li&gt;
+&lt;li&gt;Before starting the modelling,I am transforming the train, valid &amp;amp; test data splits into tfidf features with both unigrams &amp;amp; bigrams.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.model_selection import train_test_split
+X_train, X_val, y_train, y_val = train_test_split(train_df[&#39;comment_text&#39;], 
+                                                  train_df[label_col], test_size=0.2, random_state=2019)
+X_test = test_df[&#39;comment_text&#39;]
+
+tfidf = TfidfVectorizer(ngram_range = (1,2), min_df = 9, strip_accents=&#39;unicode&#39;, analyzer=&#39;word&#39;,
+                        use_idf=1, smooth_idf=1, sublinear_tf=1,stop_words = &#39;english&#39;)
+X_train_tf = tfidf.fit_transform(X_train)
+X_val_tf = tfidf.transform(X_val)
+X_test_tf = tfidf.transform(X_test)
+feature_names = tfidf.get_feature_names()
+
+print(&#39;Final Data dimensions after transformations:&#39;, X_train_tf.shape, y_train.shape, X_val_tf.shape, y_val.shape)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Final Data dimensions after transformations: (127656, 52083) (127656, 6) (31915, 52083) (31915, 6)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;modelling-baselines&#34;&gt;Modelling: Baselines&lt;/h3&gt;
+
+&lt;p&gt;Generally, I will begin with least complex models &amp;amp; will move to complex models based on their time/space complexity.&lt;/p&gt;
+
+&lt;h4 id=&#34;1-naive-bayes&#34;&gt;1. Naive Bayes&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Naive Bayes is well know for its Text Sentiment Classification tasks. It is also simple to interpret the model so I am starting with it.&lt;/li&gt;
+&lt;li&gt;If works well, added advantages includes speed - as worst case complexity is O(Nd) is comparatively low.
+
+&lt;ul&gt;
+&lt;li&gt;N = No.of data points&lt;/li&gt;
+&lt;li&gt;d = dimensions (features)&lt;/li&gt;
+&lt;/ul&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.multiclass import OneVsRestClassifier
+from sklearn.naive_bayes import MultinomialNB
+model = OneVsRestClassifier(MultinomialNB(), n_jobs = -1)
+model.fit(X_train_tf, y_train)
+print(&#39;model: Naive Bayes&#39;)
+print(&#39;mean ROC-AUC on train set:&#39;, roc_auc_score(y_train, model.predict_proba(X_train_tf)))
+y_pred_nb = model.predict_proba(X_val_tf)
+print(&#39;mean ROC-AUC on validation set:&#39;, roc_auc_score(y_val, y_pred_nb))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: Naive Bayes
+mean ROC-AUC on train set: 0.9447035800357547
+mean ROC-AUC on validation set: 0.9047281844576962
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;so what is OneVsRestClassifier doing here?&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;This is basically wrapper that converts the problem of 6 class multi-label problem into 6 individual binary classifications .i.e it builds 6 multinomialNB models. Let me write this implement what I said &amp;amp; verify my understanding.&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;model = MultinomialNB()
+
+train_rocs = []
+valid_rocs = []
+
+preds_train = np.zeros(y_train.shape)
+preds_valid = np.zeros(y_val.shape)
+preds_test = np.zeros((len(test_df), len(label_col)))
+print(&#39;model: Naive Bayes&#39;)
+for i, label_name in enumerate(label_col):
+    print(&#39;\nClass:= &#39;+label_name)
+    # fit
+    model.fit(X_train_tf,y_train[label_name])
+    
+    # train
+    preds_train[:,i] = model.predict_proba(X_train_tf)[:,1]
+    train_roc_class = roc_auc_score(y_train[label_name],preds_train[:,i])
+    print(&#39;Train ROC AUC:&#39;, train_roc_class)
+    train_rocs.append(train_roc_class)
+
+    # valid
+    preds_valid[:,i] = model.predict_proba(X_val_tf)[:,1]
+    valid_roc_class = roc_auc_score(y_val[label_name],preds_valid[:,i])
+    print(&#39;Valid ROC AUC:&#39;, valid_roc_class)
+    valid_rocs.append(valid_roc_class)
+    
+    # test predictions
+    preds_test[:,i] = model.predict_proba(X_test_tf)[:,1]
+    
+print(&#39;\nmean column-wise ROC AUC on Train data: &#39;, np.mean(train_rocs))
+print(&#39;mean column-wise ROC AUC on Val data:&#39;, np.mean(valid_rocs))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: Naive Bayes
+
+Class:= toxic
+Train ROC AUC: 0.963033817358675
+Valid ROC AUC: 0.9433242109626461
+
+Class:= severe_toxic
+Train ROC AUC: 0.960087491016496
+Valid ROC AUC: 0.9384428174271573
+
+Class:= obscene
+Train ROC AUC: 0.9644609483402
+Valid ROC AUC: 0.9402753274549794
+
+Class:= threat
+Train ROC AUC: 0.9045076993073891
+Valid ROC AUC: 0.8043702907286571
+
+Class:= insult
+Train ROC AUC: 0.9607587688582031
+Valid ROC AUC: 0.9369958039957598
+
+Class:= identity_hate
+Train ROC AUC: 0.9153727553335663
+Valid ROC AUC: 0.8649606561769773
+
+mean column-wise ROC AUC on Train data:  0.9447035800357547
+mean column-wise ROC AUC on Val data: 0.9047281844576962
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;And the results of both implementations are excatly same..&lt;/li&gt;
+&lt;li&gt;Naive Bayes performed pretty well in its zone with 0.9047...&lt;/li&gt;
+&lt;li&gt;This looks like a good score only until we ecperiment with other models...as they might score a way higher lets see...how linear models like Logistic regression &amp;amp; linear SVM perform with default parameters&lt;/li&gt;
+&lt;li&gt;From here on I will be using the onevsrest classifier.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&#34;2-logisitc-regression&#34;&gt;2. Logisitc Regression&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.linear_model import LogisticRegression
+model = OneVsRestClassifier(LogisticRegression(), n_jobs = -1)
+model.fit(X_train_tf, y_train)
+print(&#39;model: Logistic Regression&#39;)
+print(&#39;mean ROC-AUC on train set:&#39;, roc_auc_score(y_train, model.predict_proba(X_train_tf)))
+y_pred_log = model.predict_proba(X_val_tf)
+print(&#39;mean ROC-AUC on validation set:&#39;, roc_auc_score(y_val, y_pred_log))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: Logistic Regression
+mean ROC-AUC on train set: 0.9916173033614236
+mean ROC-AUC on validation set: 0.9765313638921876
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;3-linear-svm&#34;&gt;3. Linear SVM&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;Linear SVM will not support probability prediction as hinge loss is unstable, the way around is using a calibration classifer wrapper and it wont support OnevsRest classifers. so we I am using manual python loop again.&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;Notice that I fitted a new &lt;code&gt;CalibratedClassifierCV&lt;/code&gt; wrapper afer fitting the &lt;code&gt;LinearSVC&lt;/code&gt; classifier.&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.svm import LinearSVC
+from sklearn.calibration import CalibratedClassifierCV
+
+model = LinearSVC()
+
+train_rocs = []
+valid_rocs = []
+
+preds_train = np.zeros(y_train.shape)
+preds_valid = np.zeros(y_val.shape)
+preds_test = np.zeros((len(test_df), len(label_col)))
+print(&#39;model: Linear SVM&#39;)
+for i, label_name in enumerate(label_col):
+    print(&#39;\nClass:= &#39;+label_name)
+    
+    # fit
+    model.fit(X_train_tf,y_train[label_name])
+    
+    # calibration classifier fit
+    model = CalibratedClassifierCV(model, cv = &#39;prefit&#39;)
+    model.fit(X_train_tf, y_train[label_name])
+    
+    # train
+    preds_train[:,i] = model.predict_proba(X_train_tf)[:,1]
+    train_roc_class = roc_auc_score(y_train[label_name],preds_train[:,i])
+    print(&#39;Train ROC AUC:&#39;, train_roc_class)
+    train_rocs.append(train_roc_class)
+
+    # valid
+    preds_valid[:,i] = model.predict_proba(X_val_tf)[:,1]
+    valid_roc_class = roc_auc_score(y_val[label_name],preds_valid[:,i])
+    print(&#39;Valid ROC AUC:&#39;, valid_roc_class)
+    valid_rocs.append(valid_roc_class)
+    
+    # test predictions
+    preds_test[:,i] = model.predict_proba(X_test_tf)[:,1]
+    
+print(&#39;\nmean column-wise ROC AUC on Train data: &#39;, np.mean(train_rocs))
+print(&#39;mean column-wise ROC AUC on Val data:&#39;, np.mean(valid_rocs))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: Linear SVM
+
+Class:= toxic
+Train ROC AUC: 0.9978703697448817
+Valid ROC AUC: 0.96089758073119
+
+Class:= severe_toxic
+Train ROC AUC: 0.9866976038380895
+Valid ROC AUC: 0.9840277745892984
+
+Class:= obscene
+Train ROC AUC: 0.9871142993892349
+Valid ROC AUC: 0.9766191922810586
+
+Class:= threat
+Train ROC AUC: 0.957937067118062
+Valid ROC AUC: 0.9371750021897756
+
+Class:= insult
+Train ROC AUC: 0.9816784291545445
+Valid ROC AUC: 0.9723417577232863
+
+Class:= identity_hate
+Train ROC AUC: 0.9618547477210576
+Valid ROC AUC: 0.9461706736620115
+
+mean column-wise ROC AUC on Train data:  0.978858752827645
+mean column-wise ROC AUC on Val data: 0.9628719968627699
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;performance-of-linear-models&#34;&gt;Performance of Linear Models:&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Both models Logistic &amp;amp; SVM are performing better than naive bayes models.&lt;/li&gt;
+&lt;li&gt;Although Logistic is better with default parameters, I need to experiment &amp;amp; see if fine tuning helps Linear SVM.&lt;/li&gt;
+&lt;li&gt;Moreover, these models are interpretable &amp;amp; not very complex in terms of time &amp;amp; space required.&lt;/li&gt;
+&lt;li&gt;Further with prerocessing &amp;amp; fine tuning of models I am hoping to reach ROC-AUC of 0.98.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Now I will be moving to baselines of non-linear decision tree models namely RandomForests, XGB and Lightgbm.&lt;/p&gt;
+
+&lt;h4 id=&#34;4-randomforests&#34;&gt;4. RandomForests:&lt;/h4&gt;
+
+&lt;p&gt;why not single decision tree:&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;p&gt;In my practice I found RandomForest always outperforms decision trees...in other words where ever decision trees work well..certainly randomforests will also do as its base learner is a decision tree.&lt;/p&gt;&lt;/li&gt;
+
+&lt;li&gt;&lt;p&gt;Randomforests also outperforms as it averages the decision from 100&#39;s of decision tree models. Moreover, decision tree easily tends to overfit relying only on a single decision tree.&lt;/p&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from sklearn.ensemble import RandomForestClassifier
+model = OneVsRestClassifier(RandomForestClassifier(), n_jobs = -1)
+print(&#39;model: Random Forest&#39;)
+model.fit(X_train_tf, y_train)
+print(&#39;mean ROC-AUC on train set:&#39;, roc_auc_score(y_train, model.predict_proba(X_train_tf)))
+y_pred_rf = model.predict_proba(X_val_tf)
+print(&#39;mean ROC-AUC on validation set:&#39;, roc_auc_score(y_val, y_pred_rf))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: Random Forest
+mean ROC-AUC on train set: 0.9998282082745614
+mean ROC-AUC on validation set: 0.8719848045825899
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;5-lightgbm&#34;&gt;5. LightGBM&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;optimized version and generally takes lesser time than XGBoost.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from lightgbm import LGBMClassifier
+model = OneVsRestClassifier(LGBMClassifier(), n_jobs = -1)
+print(&#39;model: Lightgbm&#39;)
+model.fit(X_train_tf, y_train)
+print(&#39;mean ROC-AUC on train set:&#39;, roc_auc_score(y_train, model.predict_proba(X_train_tf)))
+y_pred_log = model.predict_proba(X_val_tf)
+print(&#39;mean ROC-AUC on validation set:&#39;, roc_auc_score(y_val, y_pred_log))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: Lightgbm
+mean ROC-AUC on train set: 0.966037582982347
+mean ROC-AUC on validation set: 0.9240550756463076
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;6xgboost&#34;&gt;6.XGBoost&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from xgboost import XGBClassifier
+model = OneVsRestClassifier(XGBClassifier(), n_jobs = -1)
+print(&#39;model: XGBoost&#39;)
+model.fit(X_train_tf, y_train)
+print(&#39;mean ROC-AUC on train set:&#39;, roc_auc_score(y_train, model.predict_proba(X_train_tf)))
+y_pred_lgb = model.predict_proba(X_val_tf)
+print(&#39;mean ROC-AUC on validation set:&#39;, roc_auc_score(y_val, y_pred_lgb))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: XGBoost
+mean ROC-AUC on train set: 0.9498677089044373
+mean ROC-AUC on validation set: 0.9366437176804424
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Random Forest are serverly overfitting with train ROC-AUC at 0.99 and validation at 0.87&lt;/li&gt;
+&lt;li&gt;All these non-linear models might be failing case of classes like &#39;threat&#39; with only around 500 samples for this class which could be a reasoning - bagging &amp;amp; boosting requires more data ?&lt;/li&gt;
+&lt;li&gt;Non-linear models in this case are overfitting a bit, when compared to linear models.&lt;/li&gt;
+&lt;li&gt;Guessing, Non linear models can be improved by reducing features using selecting only Top K best or by limiting max_depth, increasing num_trees and tuning other hyperparameters . But ensmebles are also more time complex so sticking with simple linear models is better in this case.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&#34;conclusions&#34;&gt;Conclusions:&lt;/h3&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Linear models are very well suited for this problem&lt;/li&gt;
+&lt;li&gt;Logistic Regression is having better baseline score than any other model&lt;/li&gt;
+&lt;li&gt;Logistic also has an edge with lower time/space complexity compared to ensembles and also, we can impove this further by text preprocessing &amp;amp; hyper parameter tuning.&lt;/li&gt;
+&lt;li&gt;So rather than trying complex models, I will settle with linear models &amp;amp; will try to improve the performance using preprocessing, finetuning &amp;amp; feature engineering. My next target is to improve to score to more than 0.98 using only linear models.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&#34;how-about-using-deep-neural-nets-cnns--lstms-&#34;&gt;how about using deep neural nets, CNNs &amp;amp; LSTMs ?&lt;/h3&gt;
+
+&lt;ul&gt;
+&lt;li&gt;with amount of data we are having it is possible for deep neural nets might provide better results.&lt;/li&gt;
+&lt;li&gt;But Let say after preprocessig &amp;amp; tuning our final Logistic model is having ROC-AUC of 0.98 on average &amp;amp; for some LSTM model is having ROC-AUC of 0.99..I am question myself, is it worth training &amp;amp; deploying such complex model which we can&#39;t interpret for an improvement of just 0.01 score ? If would &lt;strong&gt;NO&lt;/strong&gt; but in the kaggle competitions, every improvement in 0.0001 score matters...so may be we can try LSTMs after all to improve our knowledge..but in production I would prefer to say NO Again it ultimately depends on serverity of the problem &amp;amp; several other factors.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;X_train_val = train_df[&#39;comment_text&#39;]
+y_train_val = train_df[label_col]
+
+X_train_val = tfidf.fit_transform(train_df[&#39;comment_text&#39;])
+X_test = tfidf.transform(test_df[&#39;comment_text&#39;])
+
+
+model = OneVsRestClassifier(LogisticRegression(), n_jobs = -1)
+model.fit(X_train_val, y_train_val)
+print(&#39;model: Logistic Regression&#39;)
+print(&#39;mean ROC-AUC on train set:&#39;, roc_auc_score(y_train_val, model.predict_proba(X_train_val)))
+y_test_pred = model.predict_proba(X_test)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;model: Logistic Regression
+mean ROC-AUC on train set: 0.991368050986793
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;## making a submission file
+sub_df.iloc[:,1:] = y_test_pred
+sub_df.head()
+from IPython.display import FileLink
+sub_df.to_csv(&#39;submission.csv&#39;, index = None)
+FileLink(&#39;submission.csv&#39;)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;a href=&#39;submission.csv&#39; target=&#39;_blank&#39;&gt;submission.csv&lt;/a&gt;&lt;br&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Writing technical content in Academic</title>
+      <link>https://asrst.github.io/post/writing-technical-content/</link>
+      <pubDate>Fri, 12 Jul 2019 00:00:00 +0000</pubDate>
+      <guid>https://asrst.github.io/post/writing-technical-content/</guid>
+      <description>&lt;p&gt;Academic is designed to give technical content creators a seamless experience. You can focus on the content and Academic handles the rest.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;Highlight your code snippets, take notes on math classes, and draw diagrams from textual representation.&lt;/strong&gt;&lt;/p&gt;
+
+&lt;p&gt;On this page, you&#39;ll find some examples of the types of technical content that can be rendered with Academic.&lt;/p&gt;
+
+&lt;h2 id=&#34;examples&#34;&gt;Examples&lt;/h2&gt;
+
+&lt;h3 id=&#34;code&#34;&gt;Code&lt;/h3&gt;
+
+&lt;p&gt;Academic supports a Markdown extension for highlighting code syntax. You can enable this feature by toggling the &lt;code&gt;highlight&lt;/code&gt; option in your &lt;code&gt;config/_default/params.toml&lt;/code&gt; file.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;```python
+import pandas as pd
+data = pd.read_csv(&amp;quot;data.csv&amp;quot;)
+data.head()
+```
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;import pandas as pd
+data = pd.read_csv(&amp;quot;data.csv&amp;quot;)
+data.head()
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;math&#34;&gt;Math&lt;/h3&gt;
+
+&lt;p&gt;Academic supports a Markdown extension for $\LaTeX$ math. You can enable this feature by toggling the &lt;code&gt;math&lt;/code&gt; option in your &lt;code&gt;config/_default/params.toml&lt;/code&gt; file and adding &lt;code&gt;markup: mmark&lt;/code&gt; to your page front matter.&lt;/p&gt;
+
+&lt;p&gt;To render &lt;em&gt;inline&lt;/em&gt; or &lt;em&gt;block&lt;/em&gt; math, wrap your LaTeX math with &lt;code&gt;$$...$$&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Example &lt;strong&gt;math block&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-tex&#34;&gt;$$\gamma_{n} = \frac{ 
+\left | \left (\mathbf x_{n} - \mathbf x_{n-1} \right )^T 
+\left [\nabla F (\mathbf x_{n}) - \nabla F (\mathbf x_{n-1}) \right ] \right |}
+{\left \|\nabla F(\mathbf{x}_{n}) - \nabla F(\mathbf{x}_{n-1}) \right \|^2}$$
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;p&gt;&lt;span  class=&#34;math&#34;&gt;\[\gamma_{n} = \frac{ \left | \left (\mathbf x_{n} - \mathbf x_{n-1} \right )^T \left [\nabla F (\mathbf x_{n}) - \nabla F (\mathbf x_{n-1}) \right ] \right |}{\left \|\nabla F(\mathbf{x}_{n}) - \nabla F(\mathbf{x}_{n-1}) \right \|^2}\]&lt;/span&gt;&lt;/p&gt;
+
+&lt;p&gt;Example &lt;strong&gt;inline math&lt;/strong&gt; &lt;code&gt;$$\left \|\nabla F(\mathbf{x}_{n}) - \nabla F(\mathbf{x}_{n-1}) \right \|^2$$&lt;/code&gt; renders as &lt;span  class=&#34;math&#34;&gt;\(\left \|\nabla F(\mathbf{x}_{n}) - \nabla F(\mathbf{x}_{n-1}) \right \|^2\)&lt;/span&gt; .&lt;/p&gt;
+
+&lt;p&gt;Example &lt;strong&gt;multi-line math&lt;/strong&gt; using the &lt;code&gt;\\&lt;/code&gt; math linebreak:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-tex&#34;&gt;$$f(k;p_0^*) = \begin{cases} p_0^* &amp;amp; \text{if }k=1, \\
+1-p_0^* &amp;amp; \text {if }k=0.\end{cases}$$
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;p&gt;&lt;span  class=&#34;math&#34;&gt;\[f(k;p_0^*) = \begin{cases} p_0^* &amp; \text{if }k=1, \\
+1-p_0^* &amp; \text {if }k=0.\end{cases}\]&lt;/span&gt;&lt;/p&gt;
+
+&lt;h3 id=&#34;diagrams&#34;&gt;Diagrams&lt;/h3&gt;
+
+&lt;p&gt;Academic supports a Markdown extension for diagrams. You can enable this feature by toggling the &lt;code&gt;diagram&lt;/code&gt; option in your &lt;code&gt;config/_default/params.toml&lt;/code&gt; file or by adding &lt;code&gt;diagram: true&lt;/code&gt; to your page front matter.&lt;/p&gt;
+
+&lt;p&gt;An example &lt;strong&gt;flowchart&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;```mermaid
+graph TD;
+  A--&amp;gt;B;
+  A--&amp;gt;C;
+  B--&amp;gt;D;
+  C--&amp;gt;D;
+```
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-mermaid&#34;&gt;graph TD;
+  A--&amp;gt;B;
+  A--&amp;gt;C;
+  B--&amp;gt;D;
+  C--&amp;gt;D;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;An example &lt;strong&gt;sequence diagram&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;```mermaid
+sequenceDiagram
+  participant Alice
+  participant Bob
+  Alice-&amp;gt;John: Hello John, how are you?
+  loop Healthcheck
+      John-&amp;gt;John: Fight against hypochondria
+  end
+  Note right of John: Rational thoughts &amp;lt;br/&amp;gt;prevail...
+  John--&amp;gt;Alice: Great!
+  John-&amp;gt;Bob: How about you?
+  Bob--&amp;gt;John: Jolly good!
+```
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-mermaid&#34;&gt;sequenceDiagram
+  participant Alice
+  participant Bob
+  Alice-&amp;gt;John: Hello John, how are you?
+  loop Healthcheck
+      John-&amp;gt;John: Fight against hypochondria
+  end
+  Note right of John: Rational thoughts &amp;lt;br/&amp;gt;prevail...
+  John--&amp;gt;Alice: Great!
+  John-&amp;gt;Bob: How about you?
+  Bob--&amp;gt;John: Jolly good!
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;An example &lt;strong&gt;Gantt diagram&lt;/strong&gt;:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;```mermaid
+gantt
+  dateFormat  YYYY-MM-DD
+  section Section
+  A task           :a1, 2014-01-01, 30d
+  Another task     :after a1  , 20d
+  section Another
+  Task in sec      :2014-01-12  , 12d
+  another task      : 24d
+```
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-mermaid&#34;&gt;gantt
+  dateFormat  YYYY-MM-DD
+  section Section
+  A task           :a1, 2014-01-01, 30d
+  Another task     :after a1  , 20d
+  section Another
+  Task in sec      :2014-01-12  , 12d
+  another task      : 24d
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h3 id=&#34;todo-lists&#34;&gt;Todo lists&lt;/h3&gt;
+
+&lt;p&gt;You can even write your todo lists in Academic too:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-markdown&#34;&gt;- [x] Write math example
+- [x] Write diagram example
+- [ ] Do something else
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;input type=&#34;checkbox&#34; checked=&#34;&#34; disabled=&#34;&#34;&gt; Write math example&lt;/li&gt;
+&lt;li&gt;&lt;input type=&#34;checkbox&#34; checked=&#34;&#34; disabled=&#34;&#34;&gt; Write diagram example&lt;/li&gt;
+&lt;li&gt;&lt;input type=&#34;checkbox&#34; disabled=&#34;&#34;&gt; Do something else&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&#34;tables&#34;&gt;Tables&lt;/h3&gt;
+
+&lt;p&gt;Represent your data in tables:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-markdown&#34;&gt;| First Header  | Second Header |
+| ------------- | ------------- |
+| Content Cell  | Content Cell  |
+| Content Cell  | Content Cell  |
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;First Header&lt;/th&gt;
+&lt;th&gt;Second Header&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;Content Cell&lt;/td&gt;
+&lt;td&gt;Content Cell&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td&gt;Content Cell&lt;/td&gt;
+&lt;td&gt;Content Cell&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h3 id=&#34;asides&#34;&gt;Asides&lt;/h3&gt;
+
+&lt;p&gt;Academic supports a Markdown extension for asides, also referred to as &lt;em&gt;notices&lt;/em&gt; or &lt;em&gt;hints&lt;/em&gt;. By prefixing a paragraph with &lt;code&gt;A&amp;gt;&lt;/code&gt;, it will render as an aside. You can enable this feature by adding &lt;code&gt;markup: mmark&lt;/code&gt; to your page front matter, or alternatively using the &lt;a href=&#34;https://sourcethemes.com/academic/docs/writing-markdown-latex/#alerts&#34;&gt;&lt;em&gt;Alert&lt;/em&gt; shortcode&lt;/a&gt;.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-markdown&#34;&gt;A&amp;gt; A Markdown aside is useful for displaying notices, hints, or definitions to your readers.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;renders as&lt;/p&gt;
+
+&lt;aside&gt;
+&lt;p&gt;A Markdown aside is useful for displaying notices, hints, or definitions to your readers.&lt;/p&gt;
+&lt;/aside&gt;
+
+&lt;h3 id=&#34;did-you-find-this-page-helpful-consider-sharing-it-&#34;&gt;Did you find this page helpful? Consider sharing it 🙌&lt;/h3&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Display Jupyter Notebooks with Academic</title>
+      <link>https://asrst.github.io/post/jupyter/</link>
+      <pubDate>Tue, 05 Feb 2019 00:00:00 +0000</pubDate>
+      <guid>https://asrst.github.io/post/jupyter/</guid>
+      <description>
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;from IPython.core.display import Image
+Image(&#39;https://www.python.org/static/community_logos/python-logo-master-v3-TM-flattened.png&#39;)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&lt;img src=&#34;./academic_0_0.png&#34; alt=&#34;png&#34; /&gt;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-python&#34;&gt;print(&amp;quot;Welcome to Academic!&amp;quot;)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;pre&gt;&lt;code&gt;Welcome to Academic!
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;install-python-and-jupyter&#34;&gt;Install Python and Jupyter&lt;/h2&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://www.anaconda.com/distribution/#download-section&#34; target=&#34;_blank&#34;&gt;Install Anaconda&lt;/a&gt; which includes Python 3 and Jupyter notebook.&lt;/p&gt;
+
+&lt;p&gt;Otherwise, for advanced users, install Jupyter notebook with &lt;code&gt;pip3 install jupyter&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2 id=&#34;create-a-new-blog-post-as-usual-https-sourcethemes-com-academic-docs-managing-content-create-a-blog-post&#34;&gt;Create a new blog post &lt;a href=&#34;https://sourcethemes.com/academic/docs/managing-content/#create-a-blog-post&#34; target=&#34;_blank&#34;&gt;as usual&lt;/a&gt;&lt;/h2&gt;
+
+&lt;p&gt;Run the following commands in your Terminal, substituting &lt;code&gt;&amp;lt;MY_WEBSITE_FOLDER&amp;gt;&lt;/code&gt; and &lt;code&gt;my-post&lt;/code&gt; with the file path to your Academic website folder and a name for your blog post (without spaces), respectively:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cd &amp;lt;MY_WEBSITE_FOLDER&amp;gt;
+hugo new  --kind post post/my-post
+cd &amp;lt;MY_WEBSITE_FOLDER&amp;gt;/content/post/my-post/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;create-or-upload-a-jupyter-notebook&#34;&gt;Create or upload a Jupyter notebook&lt;/h2&gt;
+
+&lt;p&gt;Run the following command to start Jupyter within your new blog post folder. Then create a new Jupyter notebook (&lt;em&gt;New &amp;gt; Python Notebook&lt;/em&gt;) or upload a notebook.&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;jupyter notebook
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;convert-notebook-to-markdown&#34;&gt;Convert notebook to Markdown&lt;/h2&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;jupyter nbconvert Untitled.ipynb --to markdown --NbConvertApp.output_files_dir=.
+
+# Copy the contents of Untitled.md and append it to index.md:
+cat Untitled.md | tee -a index.md
+
+# Remove the temporary file:
+rm Untitled.md
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;edit-your-post-metadata&#34;&gt;Edit your post metadata&lt;/h2&gt;
+
+&lt;p&gt;Open &lt;code&gt;index.md&lt;/code&gt; in your text editor and edit the title etc. in the &lt;a href=&#34;https://sourcethemes.com/academic/docs/front-matter/&#34; target=&#34;_blank&#34;&gt;front matter&lt;/a&gt; according to your preference.&lt;/p&gt;
+
+&lt;p&gt;To set a &lt;a href=&#34;https://sourcethemes.com/academic/docs/managing-content/#featured-image&#34; target=&#34;_blank&#34;&gt;featured image&lt;/a&gt;, place an image named &lt;code&gt;featured&lt;/code&gt; into your post&amp;rsquo;s folder.&lt;/p&gt;
+
+&lt;p&gt;For other tips, such as using math, see the guide on &lt;a href=&#34;https://sourcethemes.com/academic/docs/writing-markdown-latex/&#34; target=&#34;_blank&#34;&gt;writing content with Academic&lt;/a&gt;.&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>
